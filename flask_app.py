@@ -15,10 +15,8 @@ LEADERBOARD_IDS = [
 
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
-# In-memory cache
 cache = {"data": [], "updated_at": None}
 
-# Load from file on startup if it exists
 if os.path.exists(FILE):
     try:
         with open(FILE) as f:
