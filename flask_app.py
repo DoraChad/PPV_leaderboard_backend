@@ -1,6 +1,9 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 import json, os, datetime, requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 CORS(app)
@@ -9,12 +12,10 @@ FILE = "leaderboard_cache.json"
 INTERVAL = 600
 VERSION = "0.6.0"
 AMOUNT = 500
-
 LEADERBOARD_IDS = [
     "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
     "7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0",
 ]
-
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
 cache = {"data": [], "updated_at": None}
@@ -42,19 +43,18 @@ def fetch_leaderboards():
         try:
             r = requests.get(
                 f"{API_BASE}?version={VERSION}&trackId={board_id}&skip=0&amount={AMOUNT}",
-                timeout=10
+                timeout=10,
+                verify=False
             )
             r.raise_for_status()
             results.append(r.json())
             print(f"  ✓ {board_id[:12]}...")
         except Exception as e:
-            print(f"  ✗ {board_id[:12]}... failed: {e}")
+            print(f"  ✗ {board_id[:12]}... failed: {type(e).__name__}: {e}")
             old = cache["data"][i] if i < len(cache["data"]) else {"error": "unavailable"}
             results.append(old)
-
     cache["data"] = results
     cache["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
-
     try:
         with open(FILE, "w") as f:
             json.dump(cache, f)
