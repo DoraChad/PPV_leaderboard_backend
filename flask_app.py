@@ -1,10 +1,12 @@
 from flask import Flask, jsonify
+from flask_cors import CORS
 import json, os, datetime, requests
 
 app = Flask(__name__)
+CORS(app)
 
 FILE = "leaderboard_cache.json"
-INTERVAL = 600  # 10 minutes in seconds
+INTERVAL = 600
 VERSION = "0.6.0"
 AMOUNT = 500
 
