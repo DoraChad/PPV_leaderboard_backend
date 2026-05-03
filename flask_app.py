@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-import json, os, datetime, requests, threading
+from concurrent.futures import ThreadPoolExecutor
+import json, os, datetime, time, requests, threading
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -64,8 +65,6 @@ LEADERBOARD_IDS = [
   "6cb20e2a983f5518b9fa0351b798781e272e8f1b227484a24dd10d37be122374",
   "0fcff40be442f4acedc9383c1ae927b4c6488683772061352045f17d00cc150c"
 ]
-API_BASE = "https://vps.kodub.com/v6/leaderboard"
-
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
 cache = {"data": [], "updated_at": None}
@@ -173,7 +172,5 @@ def all_leaderboards():
         "data": data
     })
 
-if os.environ.get("GUNICORN_CMD_ARGS") is not None:
-    start_background_thread()
-elif __name__ == "__main__":
-    start_background_thread()
+if __name__ == "__main__":
+    app.run()
