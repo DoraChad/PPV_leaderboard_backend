@@ -66,7 +66,10 @@ LEADERBOARD_IDS = [
 ]
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
+API_BASE = "https://vps.kodub.com/v6/leaderboard"
+
 cache = {"data": [], "updated_at": None}
+cache_lock = threading.Lock()
 
 if os.path.exists(FILE):
     try:
@@ -76,80 +79,95 @@ if os.path.exists(FILE):
     except Exception as e:
         print(f"Failed to load cache file: {e}")
 
-
-def is_stale():
-    if not cache.get("updated_at"):
-        return True
-    last = datetime.datetime.fromisoformat(cache["updated_at"].rstrip("Z"))
-    return (datetime.datetime.utcnow() - last).total_seconds() > INTERVAL
-
+def fetch_one(args):
+    board_id, i = args
+    try:
+        r = requests.get(
+            f"{API_BASE}?version={VERSION}&trackId={board_id}&skip=0&amount={AMOUNT}",
+            timeout=5
+        )
+        r.raise_for_status()
+        print(f"  ✓ {board_id[:12]}...")
+        return r.json()
+    except Exception as e:
+        print(f"  ✗ {board_id[:12]}... failed: {type(e).__name__}: {e}")
+        with cache_lock:
+            return cache["data"][i] if i < len(cache["data"]) else {"error": "unavailable"}
 
 def fetch_leaderboards():
     print(f"[{datetime.datetime.utcnow()}] Fetching leaderboards...")
-    results = []
-    for i, board_id in enumerate(LEADERBOARD_IDS):
-        try:
-            r = requests.get(
-                f"{API_BASE}?version={VERSION}&trackId={board_id}&skip=0&amount={AMOUNT}",
-                timeout=10,
-                verify=False
-            )
-            r.raise_for_status()
-            results.append(r.json())
-            print(f"  ✓ {board_id[:12]}...")
-        except Exception as e:
-            print(f"  ✗ {board_id[:12]}... failed: {type(e).__name__}: {e}")
-            old = cache["data"][i] if i < len(cache["data"]) else {"error": "unavailable"}
-            results.append(old)
-    cache["data"] = results
-    cache["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
-    try:
-        with open(FILE, "w") as f:
-            json.dump(cache, f)
-    except Exception as e:
-        print(f"Failed to save cache file: {e}")
 
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(fetch_one, [(bid, i) for i, bid in enumerate(LEADERBOARD_IDS)]))
+
+    with cache_lock:
+        cache["data"] = results
+        cache["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+
+        try:
+            with open(FILE, "w") as f:
+                json.dump(cache, f)
+        except Exception as e:
+            print(f"Failed to save cache file: {e}")
+
+def updater():
+    while True:
+        try:
+            fetch_leaderboards()
+        except Exception as e:
+            print(f"Updater error: {e}")
+        time.sleep(INTERVAL)
+
+threading.Thread(target=updater, daemon=True).start()
+
+def build_meta():
+    with cache_lock:
+        updated_at = cache.get("updated_at")
+
+    if not updated_at:
+        return None, None
+
+    updated_dt = datetime.datetime.fromisoformat(updated_at.rstrip("Z"))
+    next_update = updated_dt + datetime.timedelta(seconds=INTERVAL)
+
+    return updated_at, next_update.isoformat() + "Z"
 
 @app.route("/")
 def index():
-    if is_stale():
-        fetch_leaderboards()
-    updated_at = datetime.datetime.fromisoformat(cache["updated_at"].rstrip("Z"))
-    next_update = updated_at + datetime.timedelta(seconds=INTERVAL)
+    updated_at, next_update = build_meta()
     return jsonify({
-        "updated_at": cache["updated_at"],
-        "next_update": next_update.isoformat() + "Z",
-        "track_count": len(cache["data"]),
+        "updated_at": updated_at,
+        "next_update": next_update,
+        "track_count": len(cache["data"])
     })
-
 
 @app.route("/leaderboard/<int:index>")
 def single(index):
-    if is_stale():
-        fetch_leaderboards()
-    if index < 0 or index >= len(cache["data"]):
-        return jsonify({"error": "index out of range"}), 404
-    updated_at = datetime.datetime.fromisoformat(cache["updated_at"].rstrip("Z"))
-    next_update = updated_at + datetime.timedelta(seconds=INTERVAL)
-    return jsonify({
-        "updated_at": cache["updated_at"],
-        "next_update": next_update.isoformat() + "Z",
-        "data": cache["data"][index]
-    })
+    with cache_lock:
+        if index < 0 or index >= len(cache["data"]):
+            return jsonify({"error": "index out of range"}), 404
+        data = cache["data"][index]
 
+    updated_at, next_update = build_meta()
+
+    return jsonify({
+        "updated_at": updated_at,
+        "next_update": next_update,
+        "data": data
+    })
 
 @app.route("/leaderboards")
 def all_leaderboards():
-    if is_stale():
-        fetch_leaderboards()
-    updated_at = datetime.datetime.fromisoformat(cache["updated_at"].rstrip("Z"))
-    next_update = updated_at + datetime.timedelta(seconds=INTERVAL)
-    return jsonify({
-        "updated_at": cache["updated_at"],
-        "next_update": next_update.isoformat() + "Z",
-        "data": cache["data"]
-    })
+    with cache_lock:
+        data = cache["data"]
 
+    updated_at, next_update = build_meta()
+
+    return jsonify({
+        "updated_at": updated_at,
+        "next_update": next_update,
+        "data": data
+    })
 
 if __name__ == "__main__":
     app.run(debug=False)
