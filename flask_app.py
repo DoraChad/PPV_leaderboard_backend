@@ -118,7 +118,11 @@ def updater():
             print(f"Updater error: {e}")
         time.sleep(INTERVAL)
 
-threading.Thread(target=updater, daemon=True).start()
+def start_background_thread():
+    thread = threading.Thread(target=updater, daemon=True)
+    thread.start()
+
+start_background_thread()
 
 def build_meta():
     with cache_lock:
@@ -169,5 +173,7 @@ def all_leaderboards():
         "data": data
     })
 
-if __name__ == "__main__":
-    app.run(debug=False)
+if os.environ.get("GUNICORN_CMD_ARGS") is not None:
+    start_background_thread()
+elif __name__ == "__main__":
+    start_background_thread()
