@@ -67,6 +67,25 @@ LEADERBOARD_IDS = [
 ]
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
+MANUAL_ENTRIES = [
+  {"track": "82125bc5d07e32951b52ae7fa885d1ef25618bc861f9fd6334eb3500dd440e34",
+   "name": "Fellowpurper",
+   "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
+   "frames": 300000},
+
+  {"track": "e8bddc248df6500693a0a3e6bc6a0b8a6402651f5c80f9f07b658be851656c56",
+   "name": "Fellowpurper",
+   "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
+   "frames": 26045},
+
+  {"track": "82125bc5d07e32951b52ae7fa885d1ef25618bc861f9fd6334eb3500dd440e34",
+   "name": "Fellowpurper",
+   "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
+   "frames": 8538},
+]
+
+DEFAULT_CAR_COLORS = "000000" * 4
+
 cache = {"data": [], "updated_at": None}
 cache_lock = threading.Lock()
 
@@ -93,11 +112,54 @@ def fetch_one(args):
         with cache_lock:
             return cache["data"][i] if i < len(cache["data"]) else {"error": "unavailable"}
 
+def inject_manual_entries(results):
+    """Insert MANUAL_ENTRIES into the matching leaderboard, re-sort by frames, bump total."""
+    if not MANUAL_ENTRIES:
+        return results
+
+    by_track = {}
+    for entry in MANUAL_ENTRIES:
+        by_track.setdefault(entry["track"], []).append(entry)
+
+    for i, board_id in enumerate(LEADERBOARD_IDS):
+        manual = by_track.get(board_id)
+        if not manual:
+            continue
+
+        board = results[i]
+        # Skip boards that failed to fetch — we don't want to fabricate a partial response.
+        if not isinstance(board, dict) or "entries" not in board:
+            print(f"  ! skipping manual injection for {board_id[:12]}... (board unavailable)")
+            continue
+
+        existing_user_ids = {e.get("userId") for e in board["entries"]}
+        injected = 0
+        for m in manual:
+            if m["userId"] in existing_user_ids:
+                continue 
+            board["entries"].append({
+                "id": -1,
+                "userId": m["userId"],
+                "name": m["name"],
+                "frames": m["frames"],
+                "carColors": m.get("carColors", DEFAULT_CAR_COLORS),
+            })
+            injected += 1
+
+        if injected:
+            board["entries"].sort(key=lambda e: e["frames"])
+            board["total"] = board.get("total", 0) + injected
+            print(f"  + injected {injected} manual entries into {board_id[:12]}...")
+
+    return results
+
 def fetch_leaderboards():
     print(f"[{datetime.datetime.utcnow()}] Fetching leaderboards...")
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(fetch_one, [(bid, i) for i, bid in enumerate(LEADERBOARD_IDS)]))
+
+    results = inject_manual_entries(results)
 
     with cache_lock:
         cache["data"] = results
