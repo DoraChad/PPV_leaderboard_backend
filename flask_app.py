@@ -68,7 +68,7 @@ LEADERBOARD_IDS = [
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
 MANUAL_ENTRIES = [
-  {"track": "82125bc5d07e32951b52ae7fa885d1ef25618bc861f9fd6334eb3500dd440e34",
+  {"track": "0fcff40be442f4acedc9383c1ae927b4c6488683772061352045f17d00cc150c",
    "name": "Fellowpurper",
    "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
    "frames": 300000},
