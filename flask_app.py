@@ -67,21 +67,32 @@ LEADERBOARD_IDS = [
 ]
 API_BASE = "https://vps.kodub.com/v6/leaderboard"
 
+# {"track": <id>, "name": str, "userId": str, "frames": int, "carColors"?: str}
 MANUAL_ENTRIES = [
   {"track": "0fcff40be442f4acedc9383c1ae927b4c6488683772061352045f17d00cc150c",
    "name": "Fellowpurper",
    "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
    "frames": 300000},
-
   {"track": "e8bddc248df6500693a0a3e6bc6a0b8a6402651f5c80f9f07b658be851656c56",
    "name": "Fellowpurper",
    "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
    "frames": 26045},
-
   {"track": "82125bc5d07e32951b52ae7fa885d1ef25618bc861f9fd6334eb3500dd440e34",
    "name": "Fellowpurper",
    "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
    "frames": 8538},
+  {"track": "d732e13555164f4bb04c131d97aca6dfb201876f4999bc4f3da4d3995ce90c76",
+   "name": "Notobiv",
+   "userId": "7606d892845e7f10950a178a27a7256c0e959b785db03b0eaa5a5256032cfa5f",
+   "frames": 120993},
+  {"track": "5b91db62c77e459a117c8fc70dd03a4c7475a14885e0dcbf5c97a3774222b0e2",
+   "name": "Tvirty",
+   "userId": "e578b94eeedd9874dbc3c6d959cc39628df19f3f5067e549fd06dc5d888521a5",
+   "frames": 13113},
+  {"track": "691ff65d547d079608217b19616c70cb102691956cf344b73d0267b9328e489d",
+   "name": "Tvirty",
+   "userId": "e578b94eeedd9874dbc3c6d959cc39628df19f3f5067e549fd06dc5d888521a5",
+   "frames": 164292},
 ]
 
 DEFAULT_CAR_COLORS = "000000" * 4
@@ -89,10 +100,25 @@ DEFAULT_CAR_COLORS = "000000" * 4
 cache = {"data": [], "updated_at": None}
 cache_lock = threading.Lock()
 
+def _remap_entry_names(board):
+    """Upstream returns each entry with a 'name' field; clients here expect 'nickname'.
+    Rename in place. Safe to call on a board that's already remapped (no-op)."""
+    if not isinstance(board, dict):
+        return board
+    for entry in board.get("entries", []) or []:
+        if "name" in entry and "nickname" not in entry:
+            entry["nickname"] = entry.pop("name")
+    user_entry = board.get("userEntry")
+    if isinstance(user_entry, dict) and "name" in user_entry and "nickname" not in user_entry:
+        user_entry["nickname"] = user_entry.pop("name")
+    return board
+
 if os.path.exists(FILE):
     try:
         with open(FILE) as f:
             cache = json.load(f)
+        for board in cache.get("data", []):
+            _remap_entry_names(board)
         print(f"Loaded cache from file, last updated {cache.get('updated_at')}")
     except Exception as e:
         print(f"Failed to load cache file: {e}")
@@ -106,14 +132,13 @@ def fetch_one(args):
         )
         r.raise_for_status()
         print(f"  ✓ {board_id[:12]}...")
-        return r.json()
+        return _remap_entry_names(r.json())
     except Exception as e:
         print(f"  ✗ {board_id[:12]}... failed: {type(e).__name__}: {e}")
         with cache_lock:
             return cache["data"][i] if i < len(cache["data"]) else {"error": "unavailable"}
 
 def inject_manual_entries(results):
-    """Insert MANUAL_ENTRIES into the matching leaderboard, re-sort by frames, bump total."""
     if not MANUAL_ENTRIES:
         return results
 
@@ -127,29 +152,35 @@ def inject_manual_entries(results):
             continue
 
         board = results[i]
-        # Skip boards that failed to fetch — we don't want to fabricate a partial response.
         if not isinstance(board, dict) or "entries" not in board:
             print(f"  ! skipping manual injection for {board_id[:12]}... (board unavailable)")
             continue
 
-        existing_user_ids = {e.get("userId") for e in board["entries"]}
+        existing_by_user = {e.get("userId"): e for e in board["entries"] if e.get("userId")}
         injected = 0
+        replaced = 0
         for m in manual:
-            if m["userId"] in existing_user_ids:
-                continue 
-            board["entries"].append({
-                "id": -1,
-                "userId": m["userId"],
-                "name": m["name"],
-                "frames": m["frames"],
-                "carColors": m.get("carColors", DEFAULT_CAR_COLORS),
-            })
-            injected += 1
+            existing = existing_by_user.get(m["userId"])
+            if existing is None:
+                board["entries"].append({
+                    "id": -1,
+                    "userId": m["userId"],
+                    "nickname": m["name"],
+                    "frames": m["frames"],
+                    "carColors": m.get("carColors", DEFAULT_CAR_COLORS),
+                })
+                injected += 1
+            elif m["frames"] < existing["frames"]:
+                existing["nickname"] = m["name"]
+                existing["frames"] = m["frames"]
+                existing["carColors"] = m.get("carColors", existing.get("carColors", DEFAULT_CAR_COLORS))
+                replaced += 1
 
-        if injected:
+        if injected or replaced:
+            # Lower frames = faster = better rank.
             board["entries"].sort(key=lambda e: e["frames"])
             board["total"] = board.get("total", 0) + injected
-            print(f"  + injected {injected} manual entries into {board_id[:12]}...")
+            print(f"  + {board_id[:12]}...: {injected} added, {replaced} improved")
 
     return results
 
