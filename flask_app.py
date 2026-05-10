@@ -93,6 +93,10 @@ MANUAL_ENTRIES = [
    "name": "Tvirty",
    "userId": "e578b94eeedd9874dbc3c6d959cc39628df19f3f5067e549fd06dc5d888521a5",
    "frames": 164292},
+  {"track": "691ff65d547d079608217b19616c70cb102691956cf344b73d0267b9328e489d",
+   "name": "NeoRacer PP",
+   "userId": "903ab0f190dc3f6d63b4a1e3a22362781d9cddcee9701b1d0143577299988c67",
+   "frames": 358287},
 ]
 
 DEFAULT_CAR_COLORS = "000000" * 4
